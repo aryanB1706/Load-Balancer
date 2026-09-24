@@ -1,0 +1,18 @@
+# Build outputs
+build/
+build-asan/
+build-tsan/
+cmake-build-*/
+
+# Object files / binaries
+*.o
+*.a
+*.so
+lb
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

@@ -1,0 +1,11 @@
+# Example config file for tcp_load_balancer.
+# Lines starting with '#' are comments. Whitespace is trimmed.
+listen_port=8080
+workers=4
+backends=127.0.0.1:9001,127.0.0.1:9002,127.0.0.1:9003
+health_interval=2
+health_timeout_ms=1000
+fail_after=2
+healthy_after=2
+rate=0
+burst=100
