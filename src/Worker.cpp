@@ -16,13 +16,15 @@
 #include "Logger.h"
 #include "SocketUtil.h"
 
+using namespace std;
+
 namespace lb {
 namespace {
 
 constexpr int kMaxEvents = 128;
 // Bounded drain after stop: existing conns get this long to finish, then
 // force-closed so join() can't hang on idle keep-alives.
-constexpr auto kDrainGrace = std::chrono::seconds(5);
+constexpr auto kDrainGrace = chrono::seconds(5);
 
 void epollDel(int epfd, int fd) {
     ::epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
@@ -85,7 +87,7 @@ void setReuse(int fd) {
 }
 
 // Client IP for the rate limiter. Numeric string; "?" on failure (fail-open).
-std::string peerIp(int fd) {
+string peerIp(int fd) {
     struct sockaddr_storage ss {};
     socklen_t len = sizeof(ss);
     if (::getpeername(fd, reinterpret_cast<struct sockaddr*>(&ss), &len) != 0) return "?";
@@ -109,11 +111,11 @@ void closeFd(int fd) {
 
 }  // namespace
 
-Worker::Worker(int id, int listen_port, std::shared_ptr<BackendPool> pool,
-               std::shared_ptr<RateLimiter> limiter)
-    : id_(id), listen_port_(listen_port), pool_(std::move(pool)), limiter_(std::move(limiter)) {}
+Worker::Worker(int id, int listen_port, shared_ptr<BackendPool> pool,
+               shared_ptr<RateLimiter> limiter)
+    : id_(id), listen_port_(listen_port), pool_(move(pool)), limiter_(move(limiter)) {}
 
-bool Worker::setupListenSocket(std::string& err) {
+bool Worker::setupListenSocket(string& err) {
     // Each worker binds the SAME port with SO_REUSEPORT; the kernel
     // distributes incoming connections across workers. Fall back to IPv4
     // if dual-stack IPv6 is unavailable.
@@ -130,7 +132,7 @@ bool Worker::setupListenSocket(std::string& err) {
         a6.sin6_addr = in6addr_any;
         a6.sin6_port = htons(static_cast<uint16_t>(listen_port_));
         if (::bind(s6.get(), reinterpret_cast<sockaddr*>(&a6), sizeof(a6)) == 0) {
-            s = std::move(s6);
+            s = move(s6);
             v6 = true;
         }
     }
@@ -150,7 +152,7 @@ bool Worker::setupListenSocket(std::string& err) {
                   std::to_string(listen_port_) + ") failed: " + ::strerror(errno);
             return false;
         }
-        s = std::move(s4);
+        s = move(s4);
     }
 
     if (!setNonBlocking(s.get())) {
@@ -163,13 +165,13 @@ bool Worker::setupListenSocket(std::string& err) {
         err += ::strerror(errno);
         return false;
     }
-    listen_fd_ = std::move(s);
+    listen_fd_ = move(s);
     LOG_INFO("worker " + std::to_string(id_) + " listening on :" +
              std::to_string(listen_port_) + (v6 ? " (dual-stack v6, reuseport)" : " (ipv4, reuseport)"));
     return true;
 }
 
-bool Worker::setupEpoll(std::string& err) {
+bool Worker::setupEpoll(string& err) {
     Fd e;
     while (true) {
         int f = ::epoll_create1(EPOLL_CLOEXEC);
@@ -186,12 +188,12 @@ bool Worker::setupEpoll(std::string& err) {
         err = "epoll_ctl ADD listen failed";
         return false;
     }
-    epoll_fd_ = std::move(e);
+    epoll_fd_ = move(e);
     return true;
 }
 
 int Worker::createAndConnectBackend(const Backend& be, bool& connecting,
-                                    std::string& err) {
+                                    string& err) {
     connecting = false;
     err.clear();
 
@@ -199,7 +201,7 @@ int Worker::createAndConnectBackend(const Backend& be, bool& connecting,
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     struct addrinfo* res = nullptr;
-    std::string port = std::to_string(be.port);
+    string port = std::to_string(be.port);
     int rc = ::getaddrinfo(be.host.c_str(), port.c_str(), &hints, &res);
     if (rc != 0) {
         err = "getaddrinfo(" + be.host + ":" + port + "): " + ::gai_strerror(rc);
@@ -207,7 +209,7 @@ int Worker::createAndConnectBackend(const Backend& be, bool& connecting,
     }
 
     int out = -1;
-    std::string lastErr;
+    string lastErr;
     for (struct addrinfo* ai = res; ai != nullptr; ai = ai->ai_next) {
         int s = ::socket(ai->ai_family, ai->ai_socktype | SOCK_CLOEXEC, ai->ai_protocol);
         if (s < 0) {
@@ -251,12 +253,12 @@ int Worker::createAndConnectBackend(const Backend& be, bool& connecting,
     return out;
 }
 
-void Worker::updateInterest(const std::shared_ptr<Connection>& c) {
+void Worker::updateInterest(const shared_ptr<Connection>& c) {
     epollMod(epoll_fd_.get(), c->clientFd(), c->clientInterest());
     epollMod(epoll_fd_.get(), c->backendFd(), c->backendInterest());
 }
 
-void Worker::closeConnection(const std::shared_ptr<Connection>& c) {
+void Worker::closeConnection(const shared_ptr<Connection>& c) {
     int cf = c->clientFd();
     int bf = c->backendFd();
     epollDel(epoll_fd_.get(), cf);
@@ -277,7 +279,7 @@ void Worker::handleAccept() {
             if (errno == ECONNABORTED || errno == EINTR) continue;
             if (stop_.load()) break;  // listen closed during shutdown
             LOG_WARN("worker " + std::to_string(id_) +
-                     std::string(" accept failed: ") + ::strerror(errno));
+                     string(" accept failed: ") + ::strerror(errno));
             break;
         }
 
@@ -286,7 +288,7 @@ void Worker::handleAccept() {
 
         // Task 7: per-IP token bucket. Reject before touching any backend.
         if (limiter_ && limiter_->enabled()) {
-            std::string ip = peerIp(c);
+            string ip = peerIp(c);
             if (ip != "?" && !limiter_->allow(ip)) {
                 rejected_.fetch_add(1);
                 LOG_INFO("worker " + std::to_string(id_) + ": rate limited " + ip +
@@ -307,7 +309,7 @@ void Worker::handleAccept() {
         }
 
         bool connecting = false;
-        std::string berr;
+        string berr;
         int b = createAndConnectBackend(*be, connecting, berr);
         if (b < 0) {
             LOG_WARN("worker " + std::to_string(id_) + " backend " + be->addr() +
@@ -319,7 +321,7 @@ void Worker::handleAccept() {
         LOG_INFO("worker " + std::to_string(id_) + ": client fd=" +
                  std::to_string(c) + " -> backend " + be->addr());
 
-        auto conn = std::make_shared<Connection>(c, b, connecting);
+        auto conn = make_shared<Connection>(c, b, connecting);
         if (!epollAdd(epoll_fd_.get(), c, conn->clientInterest()) ||
             !epollAdd(epoll_fd_.get(), b, conn->backendInterest())) {
             LOG_WARN("worker " + std::to_string(id_) + " epoll add failed, dropping");
@@ -340,7 +342,7 @@ void Worker::handleEvent(int fd, uint32_t events) {
     }
     auto it = fd_map_.find(fd);
     if (it == fd_map_.end()) return;
-    std::shared_ptr<Connection> conn = it->second;
+    shared_ptr<Connection> conn = it->second;
 
     bool wantClose = false;
     if (fd == conn->clientFd()) {
@@ -361,13 +363,13 @@ void Worker::handleEvent(int fd, uint32_t events) {
 void Worker::loop() {
     struct epoll_event evs[kMaxEvents];
     bool draining = false;
-    auto stopAt = std::chrono::steady_clock::now();
+    auto stopAt = chrono::steady_clock::now();
 
     while (true) {
         if (stop_.load() && !draining) {
             // Phase 1: stop accepting immediately.
             draining = true;
-            stopAt = std::chrono::steady_clock::now();
+            stopAt = chrono::steady_clock::now();
             epollDel(epoll_fd_.get(), listen_fd_.get());
             listen_fd_.reset();  // close listen socket; kernel sends new SYNs elsewhere
             LOG_INFO("worker " + std::to_string(id_) + " stopped accepting, draining " +
@@ -375,7 +377,7 @@ void Worker::loop() {
         }
         if (draining) {
             if (fd_map_.empty()) break;
-            if (std::chrono::steady_clock::now() - stopAt > kDrainGrace) {
+            if (chrono::steady_clock::now() - stopAt > kDrainGrace) {
                 LOG_WARN("worker " + std::to_string(id_) + " drain timeout, force-closing " +
                          std::to_string(fd_map_.size() / 2) + " conns");
                 break;  // fd_map_ clear below closes all Fds
@@ -385,7 +387,7 @@ void Worker::loop() {
         if (n < 0) {
             if (errno == EINTR) continue;
             LOG_ERROR("worker " + std::to_string(id_) +
-                      std::string(" epoll_wait failed: ") + ::strerror(errno));
+                      string(" epoll_wait failed: ") + ::strerror(errno));
             break;
         }
         for (int i = 0; i < n; ++i) {
@@ -398,7 +400,7 @@ void Worker::loop() {
 }
 
 void Worker::run() {
-    std::string err;
+    string err;
     if (!setupListenSocket(err)) {
         LOG_ERROR(err);
         return;

@@ -2,12 +2,14 @@
 
 #include <sstream>
 
+using namespace std;
+
 namespace lb {
 
-BackendPool::BackendPool(const std::vector<BackendEndpoint>& endpoints) {
+BackendPool::BackendPool(const vector<BackendEndpoint>& endpoints) {
     backends_.reserve(endpoints.size());
     for (const auto& ep : endpoints) {
-        backends_.push_back(std::make_unique<Backend>(ep.host, ep.port));
+        backends_.push_back(make_unique<Backend>(ep.host, ep.port));
     }
 }
 
@@ -19,29 +21,29 @@ const Backend* BackendPool::pick() noexcept {
     // double up the successor of the dead slot).
     size_t h = 0;
     for (auto& b : backends_) {
-        if (b->healthy.load(std::memory_order_relaxed)) ++h;
+        if (b->healthy.load(memory_order_relaxed)) ++h;
     }
     if (h == 0) return nullptr;  // all unhealthy
-    uint64_t k = next_.fetch_add(1, std::memory_order_relaxed) % h;
+    uint64_t k = next_.fetch_add(1, memory_order_relaxed) % h;
     for (auto& b : backends_) {
-        if (!b->healthy.load(std::memory_order_relaxed)) continue;
+        if (!b->healthy.load(memory_order_relaxed)) continue;
         if (k == 0) return b.get();
         --k;
     }
     // Healthy set flipped mid-pick; fall back to first healthy (re-scanned).
     for (auto& b : backends_) {
-        if (b->healthy.load(std::memory_order_relaxed)) return b.get();
+        if (b->healthy.load(memory_order_relaxed)) return b.get();
     }
     return nullptr;
 }
 
 void BackendPool::setHealthy(size_t idx, bool h) noexcept {
-    if (idx < backends_.size()) backends_[idx]->healthy.store(h, std::memory_order_relaxed);
+    if (idx < backends_.size()) backends_[idx]->healthy.store(h, memory_order_relaxed);
 }
 
 bool BackendPool::isHealthy(size_t idx) const noexcept {
     if (idx >= backends_.size()) return false;
-    return backends_[idx]->healthy.load(std::memory_order_relaxed);
+    return backends_[idx]->healthy.load(memory_order_relaxed);
 }
 
 const Backend* BackendPool::at(size_t idx) const noexcept {
@@ -49,8 +51,8 @@ const Backend* BackendPool::at(size_t idx) const noexcept {
     return backends_[idx].get();
 }
 
-std::string BackendPool::describe() const {
-    std::ostringstream os;
+string BackendPool::describe() const {
+    ostringstream os;
     os << "[";
     for (size_t i = 0; i < backends_.size(); ++i) {
         if (i) os << ",";

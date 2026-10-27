@@ -13,10 +13,12 @@
 #include "Logger.h"
 #include "SocketUtil.h"
 
+using namespace std;
+
 namespace lb {
 
-HealthChecker::HealthChecker(std::shared_ptr<BackendPool> pool, HealthCheckParams params)
-    : pool_(std::move(pool)), params_(params) {}
+HealthChecker::HealthChecker(shared_ptr<BackendPool> pool, HealthCheckParams params)
+    : pool_(move(pool)), params_(params) {}
 
 void HealthChecker::start() {
     bool expected = false;
@@ -24,7 +26,7 @@ void HealthChecker::start() {
     stop_.store(false);
     fails_.assign(pool_ ? pool_->size() : 0, 0);
     oks_.assign(pool_ ? pool_->size() : 0, 0);
-    thread_ = std::thread([this] { threadMain(); });
+    thread_ = thread([this] { threadMain(); });
 }
 
 void HealthChecker::stop() {
@@ -39,7 +41,7 @@ bool HealthChecker::sleepSlice(int total_ms) {
     while (waited < total_ms) {
         if (stop_.load()) return false;
         int step = total_ms - waited > 100 ? 100 : total_ms - waited;
-        std::this_thread::sleep_for(std::chrono::milliseconds(step));
+        this_thread::sleep_for(chrono::milliseconds(step));
         waited += step;
     }
     return !stop_.load();
@@ -52,7 +54,7 @@ bool HealthChecker::probe(const Backend& be) {
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     struct addrinfo* res = nullptr;
-    std::string port = std::to_string(be.port);
+    string port = std::to_string(be.port);
     if (::getaddrinfo(be.host.c_str(), port.c_str(), &hints, &res) != 0) return false;
 
     bool ok = false;
@@ -76,7 +78,7 @@ bool HealthChecker::probe(const Backend& be) {
             pfd.fd = s;
             pfd.events = POLLOUT;
             int ms_left = params_.timeout_ms;
-            auto t0 = std::chrono::steady_clock::now();
+            auto t0 = chrono::steady_clock::now();
             for (;;) {
                 int pr = ::poll(&pfd, 1, ms_left);
                 if (pr > 0) {
@@ -88,8 +90,8 @@ bool HealthChecker::probe(const Backend& be) {
                 }
                 if (pr == 0) break;  // timeout -> fail
                 if (errno == EINTR) {
-                    auto spent = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                     std::chrono::steady_clock::now() - t0)
+                    auto spent = chrono::duration_cast<chrono::milliseconds>(
+                                     chrono::steady_clock::now() - t0)
                                      .count();
                     ms_left = params_.timeout_ms - static_cast<int>(spent);
                     if (ms_left <= 0) break;

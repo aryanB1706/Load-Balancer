@@ -5,12 +5,14 @@
 
 #include "Logger.h"
 
+using namespace std;
+
 namespace lb {
 
-Listener::Listener(int listen_port, std::shared_ptr<BackendPool> pool, int workers,
+Listener::Listener(int listen_port, shared_ptr<BackendPool> pool, int workers,
                    HealthCheckParams hc_params, RateLimitParams rl_params)
     : listen_port_(listen_port),
-      pool_(std::move(pool)),
+      pool_(move(pool)),
       nworkers_(workers > 0 ? workers : 1),
       hc_params_(hc_params),
       rl_params_(rl_params) {}
@@ -25,7 +27,7 @@ void Listener::run() {
     checker.start();
 
     // Rate limiter (shared, sharded). Disabled when rate <= 0.
-    auto limiter = std::make_shared<RateLimiter>(rl_params_);
+    auto limiter = make_shared<RateLimiter>(rl_params_);
     limiter->start();
     if (limiter->enabled()) {
         LOG_INFO("ratelimit: " + std::to_string(rl_params_.rate_per_sec) + "/s per IP, burst " +
@@ -35,7 +37,7 @@ void Listener::run() {
     workers_.reserve(static_cast<size_t>(nworkers_));
     threads_.reserve(static_cast<size_t>(nworkers_));
     for (int i = 0; i < nworkers_; ++i) {
-        workers_.push_back(std::make_unique<Worker>(i, listen_port_, pool_, limiter));
+        workers_.push_back(make_unique<Worker>(i, listen_port_, pool_, limiter));
     }
     for (int i = 0; i < nworkers_; ++i) {
         threads_.emplace_back([this, i] { workers_[static_cast<size_t>(i)]->run(); });
@@ -45,7 +47,7 @@ void Listener::run() {
 
     // Wait for SIGINT/SIGTERM.
     while (!stop_.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        this_thread::sleep_for(chrono::milliseconds(100));
     }
 
     // Graceful shutdown: stop health checks + limiter cleanup first (freeze

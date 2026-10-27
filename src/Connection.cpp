@@ -8,16 +8,18 @@
 
 #include "Logger.h"
 
+using namespace std;
+
 namespace lb {
 namespace {
 
 constexpr size_t kReadChunk = 32 * 1024;
 
-size_t pending(const std::vector<char>& v, size_t off) {
+size_t pending(const vector<char>& v, size_t off) {
     return v.size() > off ? v.size() - off : 0;
 }
 
-void compact(std::vector<char>& v, size_t& off) {
+void compact(vector<char>& v, size_t& off) {
     if (off == 0) return;
     if (off >= v.size()) {
         v.clear();

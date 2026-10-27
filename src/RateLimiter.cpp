@@ -2,6 +2,8 @@
 
 #include <functional>
 
+using namespace std;
+
 namespace lb {
 
 RateLimiter::RateLimiter(RateLimitParams params) : params_(params) {}
@@ -11,7 +13,7 @@ void RateLimiter::start() {
     bool expected = false;
     if (!running_.compare_exchange_strong(expected, true)) return;
     stop_.store(false);
-    thread_ = std::thread([this] { threadMain(); });
+    thread_ = thread([this] { threadMain(); });
 }
 
 void RateLimiter::stop() {
@@ -20,16 +22,16 @@ void RateLimiter::stop() {
     running_.store(false);
 }
 
-RateLimiter::Shard& RateLimiter::shardFor(const std::string& ip) {
-    size_t h = std::hash<std::string>{}(ip);
+RateLimiter::Shard& RateLimiter::shardFor(const string& ip) {
+    size_t h = hash<string>{}(ip);
     return shards_[h % kShards];
 }
 
-bool RateLimiter::allow(const std::string& ip) {
+bool RateLimiter::allow(const string& ip) {
     if (!enabled()) return true;
-    auto now = std::chrono::steady_clock::now();
+    auto now = chrono::steady_clock::now();
     Shard& s = shardFor(ip);
-    std::lock_guard<std::mutex> lk(s.m);
+    lock_guard<mutex> lk(s.m);
     auto it = s.map.find(ip);
     if (it == s.map.end()) {
         // New IP starts with a full bucket, spends one token immediately.
@@ -38,7 +40,7 @@ bool RateLimiter::allow(const std::string& ip) {
     }
     Bucket& b = it->second;
     double elapsed =
-        std::chrono::duration_cast<std::chrono::duration<double>>(now - b.last).count();
+        chrono::duration_cast<chrono::duration<double>>(now - b.last).count();
     if (elapsed > 0) {
         b.tokens += elapsed * params_.rate_per_sec;
         if (b.tokens > params_.burst) b.tokens = params_.burst;
@@ -54,17 +56,17 @@ bool RateLimiter::allow(const std::string& ip) {
 size_t RateLimiter::size() const {
     size_t n = 0;
     for (auto& s : shards_) {
-        std::lock_guard<std::mutex> lk(s.m);
+        lock_guard<mutex> lk(s.m);
         n += s.map.size();
     }
     return n;
 }
 
 void RateLimiter::cleanupOnce() {
-    auto now = std::chrono::steady_clock::now();
-    auto idle = std::chrono::seconds(params_.idle_expire_sec);
+    auto now = chrono::steady_clock::now();
+    auto idle = chrono::seconds(params_.idle_expire_sec);
     for (auto& s : shards_) {
-        std::lock_guard<std::mutex> lk(s.m);
+        lock_guard<mutex> lk(s.m);
         for (auto it = s.map.begin(); it != s.map.end();) {
             if (now - it->second.last > idle) {
                 it = s.map.erase(it);
@@ -80,7 +82,7 @@ void RateLimiter::threadMain() {
         int waited = 0;
         int total_ms = params_.cleanup_sec * 1000;
         while (waited < total_ms && !stop_.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            this_thread::sleep_for(chrono::milliseconds(100));
             waited += 100;
         }
         if (stop_.load()) break;

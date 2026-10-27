@@ -7,11 +7,13 @@
 #include "Listener.h"
 #include "Logger.h"
 
+using namespace std;
+
 namespace {
-std::atomic<lb::Listener*> g_listener{nullptr};
+atomic<lb::Listener*> g_listener{nullptr};
 
 void handleSignal(int) {
-    lb::Listener* l = g_listener.load(std::memory_order_relaxed);
+    lb::Listener* l = g_listener.load(memory_order_relaxed);
     if (l) l->requestStop();
 }
 }  // namespace
@@ -27,7 +29,7 @@ int main(int argc, char* argv[]) {
             LOG_ERROR("no backends configured");
             return 1;
         }
-        auto pool = std::make_shared<lb::BackendPool>(cfg.backends);
+        auto pool = make_shared<lb::BackendPool>(cfg.backends);
         lb::HealthCheckParams hc;
         hc.interval_sec = cfg.health_interval_sec;
         hc.timeout_ms = cfg.health_timeout_ms;
@@ -40,15 +42,15 @@ int main(int argc, char* argv[]) {
                  " backends=" + pool->describe() + " workers=" + std::to_string(cfg.workers));
 
         lb::Listener listener(cfg.listen_port, pool, cfg.workers, hc, rl);
-        g_listener.store(&listener, std::memory_order_relaxed);
+        g_listener.store(&listener, memory_order_relaxed);
         ::signal(SIGINT, handleSignal);
         ::signal(SIGTERM, handleSignal);
 
         listener.run();
-        g_listener.store(nullptr, std::memory_order_relaxed);
+        g_listener.store(nullptr, memory_order_relaxed);
         return 0;
-    } catch (const std::exception& e) {
-        LOG_ERROR(std::string("fatal: ") + e.what());
+    } catch (const exception& e) {
+        LOG_ERROR(string("fatal: ") + e.what());
         lb::Config::printUsage(argv[0]);
         return 1;
     }
